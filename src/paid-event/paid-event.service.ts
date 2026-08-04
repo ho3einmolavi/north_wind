@@ -200,14 +200,31 @@ export class PaidEventService {
       amountCents: payload.amountCents,
     });
 
-    await this.db.query(
-      `UPDATE payments
-          SET amount_cents = amount_cents + $2,
-              status = 'held',
-              updated_at = now()
-        WHERE id = $1`,
-      [payment.id, payload.amountCents],
-    );
+    // Flag-guarded: WEBHOOK_SETTLEMENT_FIX_ENABLED=false restores the old
+    // (buggy) behavior for instant rollback.
+    if (process.env.WEBHOOK_SETTLEMENT_FIX_ENABLED !== 'false') {
+      // `amountCents` is the provider's confirmed settled total for this
+      // charge, not a delta -- treating it as additive double-counts on every
+      // delivery, and a terminal payment must not regress to 'held'.
+      await this.db.query(
+        `UPDATE payments
+            SET amount_cents = $2,
+                status = CASE WHEN status IN ('released', 'paid_out', 'refunded')
+                              THEN status ELSE 'held' END,
+                updated_at = now()
+          WHERE id = $1`,
+        [payment.id, payload.amountCents],
+      );
+    } else {
+      await this.db.query(
+        `UPDATE payments
+            SET amount_cents = amount_cents + $2,
+                status = 'held',
+                updated_at = now()
+          WHERE id = $1`,
+        [payment.id, payload.amountCents],
+      );
+    }
 
     this.logger.log(
       `webhook applied charge=${payload.chargeId} +${payload.amountCents}`,
