@@ -124,6 +124,31 @@ Tests:       2 failed, 2 total
 Confirms the flag genuinely toggles between old and new behavior (true
 reversibility, not just cosmetic).
 
+### 8. End-to-end proof through the real HTTP path (rebuilt container)
+
+The strongest form of the "how do you handle *one* duplicate webhook" question —
+three deliveries of the same correctly-signed settlement, through the running app
+container, against the real Postgres:
+
+```
+--- before ---
+held | 4000
+after webhook delivery #1:
+held | 4000
+after webhook delivery #2:
+held | 4000
+after webhook delivery #3:
+held | 4000
+```
+
+Before the fix the same sequence produced `4000 → 8000 → 12000 → 16000`.
+The amount is now pinned to the provider's confirmed settled total and redelivery is
+a genuine no-op.
+
+> Note: `docker-compose.yml` loads the app's `env_file` from **`.env.example`**, not
+> `.env`, so the flag was added to both files. Worth knowing before the live demo —
+> editing only `.env` would have no effect on the container.
+
 ### Diff size
 
 ```
